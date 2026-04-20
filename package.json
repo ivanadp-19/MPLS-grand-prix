@@ -1,0 +1,13 @@
+{
+  "name": "mpls-grand-prix",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MPLS Grand Prix — multijugador con PartyKit (WebSocket en Cloudflare).",
+  "scripts": {
+    "dev": "partykit dev",
+    "deploy": "partykit deploy"
+  },
+  "devDependencies": {
+    "partykit": "^0.0.114"
+  }
+}

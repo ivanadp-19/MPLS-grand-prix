@@ -14,9 +14,32 @@ Juego multijugador online todos-contra-todos para aprender enrutamiento MPLS (Mu
 
 ## Tecnología
 
-- HTML/CSS/JavaScript puro (un solo archivo)
-- PeerJS + WebRTC para multijugador P2P
-- Sin backend propio; señalización pública gratuita
+- HTML/CSS/JavaScript puro en el cliente (un solo archivo: `index.html`)
+- **PartyKit** (WebSocket en Cloudflare) como backend de mensajería multijugador
+- Servidor en `party/server.js` — el host de la partida vive en el browser, el servidor solo retransmite mensajes
+
+## Deploy
+
+Se hace una sola vez; después el juego funciona de forma estable.
+
+```bash
+# 1. Instalar dependencias (necesitas Node 18+)
+npm install
+
+# 2. Desarrollo local (servidor en http://127.0.0.1:1999)
+npm run dev
+# Abre index.html con un servidor estático, p.ej.:
+#   python3 -m http.server 8000
+# El cliente detecta automáticamente localhost y usa ws://127.0.0.1:1999
+
+# 3. Deploy a Cloudflare (primera vez pide login)
+npm run deploy
+# El CLI imprime una URL tipo: https://mpls-grand-prix.TU-USUARIO.partykit.dev
+```
+
+Después del primer deploy, abre `index.html` y reemplaza `REEMPLAZAR-USUARIO`
+en la constante `PARTYKIT_HOST` por el subdominio que te dio el CLI. Commit
+y push — GitHub Pages servirá el HTML apuntando al backend de PartyKit.
 
 ## Tipos de retos
 

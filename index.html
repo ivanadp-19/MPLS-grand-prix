@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MPLS Grand Prix - Juego Multijugador</title>
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
   body {
@@ -323,14 +322,14 @@
 // =========================================================================
 const COLORS = ['#ef4444','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ec4899','#14b8a6','#f97316'];
 let state = {
-  peer: null,
+  ws: null,             // PartyKit WebSocket (both host and clients)
   isHost: false,
-  myId: null,
+  myId: null,           // connection id assigned by the PartyKit server
+  hostId: null,         // client-only: id of the host connection
+  roomId: null,
   myNickname: '',
   myColor: COLORS[0],
-  connections: {},      // peerId -> DataConnection (host only)
-  hostConn: null,       // connection to host (client only)
-  players: {},          // peerId -> {nickname, color, score, answered, lastCorrect}
+  players: {},          // connId -> {nickname, color, score, answered, lastCorrect}
   gameConfig: { numRounds: 10, roundTime: 30 },
   currentRound: 0,
   currentChallenge: null,
@@ -338,7 +337,7 @@ let state = {
   roundStartTime: 0,
   myAnswerIndex: null,
   answeredThisRound: false,
-  answersReceived: {},  // host: peerId -> {index, time}
+  answersReceived: {},  // host: connId -> {index, time}
 };
 
 // Inicializar selector de colores
@@ -382,102 +381,17 @@ function copyRoomCode(){
 }
 
 // =========================================================================
-// CREAR / UNIRSE A SALA (PeerJS)
+// CREAR / UNIRSE A SALA (PartyKit — WebSocket en Cloudflare)
 // =========================================================================
-const PEER_OPTS = {
-  debug: 2,
-  config: {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:global.stun.twilio.com:3478' },
-      // PeerJS's public TURN servers — required when both peers are behind
-      // symmetric NAT (e.g. laptop on home wifi + phone on mobile data).
-      {
-        urls: [
-          'turn:eu-0.turn.peerjs.com:3478',
-          'turn:us-0.turn.peerjs.com:3478'
-        ],
-        username: 'peerjs',
-        credential: 'peerjsp'
-      }
-    ],
-    sdpSemantics: 'unified-plan'
-  }
-};
-const PEER_ERRORS = {
-  'peer-unavailable':    'Sala no encontrada. Revisa el código.',
-  'unavailable-id':      'Ese ID ya está en uso, intenta de nuevo.',
-  'network':             'Problema de red. Verifica tu conexión.',
-  'disconnected':        'Desconectado del servidor de señalización.',
-  'server-error':        'Servidor de señalización caído. Intenta en un minuto.',
-  'socket-error':        'No se pudo contactar al servidor. Reintenta.',
-  'socket-closed':       'Conexión cerrada inesperadamente.',
-  'ssl-unavailable':     'Problema SSL con el servidor de señalización.',
-  'browser-incompatible':'Tu navegador no soporta WebRTC.',
-  'webrtc':              'Error WebRTC — probablemente un firewall o NAT estricto.'
-};
-function peerErrorMessage(err){
-  return PEER_ERRORS[err.type] || ('Error: ' + (err.type || err.message || 'desconocido'));
-}
+// Después de hacer `npx partykit deploy`, reemplaza el host de abajo con el
+// que imprimió el CLI. Ejemplo: "mpls-grand-prix.tu-usuario.partykit.dev".
+const PARTYKIT_HOST = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  ? location.hostname + ':1999'
+  : 'mpls-grand-prix.REEMPLAZAR-USUARIO.partykit.dev';
+const WS_PROTO = PARTYKIT_HOST.startsWith('localhost') || PARTYKIT_HOST.startsWith('127.') ? 'ws' : 'wss';
 
-function createRoom(){
-  state.isHost = true;
-  const randomId = 'mpls-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-  state.peer = new Peer(randomId, PEER_OPTS);
-
-  state.peer.on('open', id => {
-    state.myId = id;
-    log('Sala creada con ID: '+id, 'success');
-    state.players[id] = { nickname: state.myNickname, color: state.myColor, score: 0, isHost: true };
-    goToWaitingRoom();
-    document.getElementById('room-code-text').textContent = id;
-    show('room-code-display');
-    show('host-controls');
-    setHostStatus(true);
-    renderWaitingPlayers();
-  });
-
-  state.peer.on('connection', conn => {
-    if(Object.keys(state.connections).length >= 4){
-      conn.on('open', ()=>{ conn.send({type:'error', message:'Sala llena (máx 5 jugadores)'}); conn.close(); });
-      return;
-    }
-    state.connections[conn.peer] = conn;
-    conn.on('open', ()=> {
-      log('Nuevo jugador conectándose: '+conn.peer);
-    });
-    conn.on('data', data => handleHostMessage(conn.peer, data));
-    conn.on('close', ()=> {
-      const p = state.players[conn.peer];
-      log((p?p.nickname:conn.peer)+' se desconectó', 'warn');
-      delete state.connections[conn.peer];
-      delete state.players[conn.peer];
-      renderWaitingPlayers();
-      broadcastPlayers();
-    });
-  });
-
-  // The free 0.peerjs.com cloud drops idle peers. Auto-reconnect so the
-  // host's room ID stays reachable while they wait for players to join.
-  state.peer.on('disconnected', () => {
-    log('Señalización desconectada, reconectando...', 'warn');
-    setHostStatus(false);
-    try { state.peer.reconnect(); } catch(e){ log('No se pudo reconectar: '+e.message, 'error'); }
-  });
-  state.peer.on('close', () => {
-    log('Peer cerrado', 'error');
-    setHostStatus(false);
-  });
-
-  state.peer.on('error', err => {
-    const msg = peerErrorMessage(err);
-    log(msg, 'error');
-    if(err.type === 'unavailable-id'){ alert('ID no disponible, intenta de nuevo'); location.reload(); return; }
-    // 'disconnected' / 'network' / 'socket-*' are handled by reconnect logic above;
-    // don't blow up the host's session with a modal for those.
-    const transient = ['disconnected','network','socket-error','socket-closed'];
-    if(!transient.includes(err.type)) alert(msg);
-  });
+function wsUrl(roomId){
+  return `${WS_PROTO}://${PARTYKIT_HOST}/parties/main/${encodeURIComponent(roomId)}`;
 }
 
 function setHostStatus(online){
@@ -487,103 +401,143 @@ function setHostStatus(online){
   el.style.color = online ? '#10b981' : '#ef4444';
 }
 
-// Host escape hatch: destroy the current peer and create a new one with a
-// fresh ID. Use when a joiner says "Sala no encontrada" even though the host
-// thinks it is online — the free PeerJS cloud sometimes keeps an orphaned
-// registration that no joiner can actually reach.
-function regenerateRoom(){
-  if(!state.isHost) return;
-  if(!confirm('Esto generará un código nuevo y desconectará a cualquier jugador ya conectado. ¿Continuar?')) return;
-  log('Regenerando sala...', 'warn');
-  try { for(const id in state.connections){ state.connections[id].close(); } } catch(e){}
-  state.connections = {};
-  state.players = {};
-  try { state.peer && state.peer.destroy(); } catch(e){}
-  state.peer = null;
-  setHostStatus(false);
-  createRoom();
+// Low-level send. Envelope shape: { to: "host"|"all"|"<connId>", type, ...payload }.
+function wsSend(envelope){
+  if(!state.ws || state.ws.readyState !== WebSocket.OPEN){
+    log('WS no abierto, mensaje descartado: '+envelope.type, 'warn');
+    return;
+  }
+  try { state.ws.send(JSON.stringify(envelope)); }
+  catch(e){ log('Error enviando: '+e.message, 'error'); }
+}
+
+// Open a PartyKit room as host (creates) or client (joins). `role` is just for
+// local bookkeeping — the server decides the actual role based on connection order.
+function openRoom(roomId, expectedRole){
+  state.roomId = roomId;
+  state.isHost = (expectedRole === 'host');
+  const ws = new WebSocket(wsUrl(roomId));
+  state.ws = ws;
+
+  ws.addEventListener('open', () => {
+    log('WebSocket conectado a '+roomId, 'success');
+  });
+
+  ws.addEventListener('message', ev => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch { return; }
+    dispatchServerMessage(msg);
+  });
+
+  ws.addEventListener('close', ev => {
+    log('WebSocket cerrado ('+ev.code+')', 'error');
+    setHostStatus(false);
+    // Don't auto-reload — the user may have deliberately regenerated. Only
+    // show a modal if we had a valid session.
+    if(state.myId && !state.regenerating){
+      alert('Conexión perdida. Recarga la página para volver a intentarlo.');
+    }
+  });
+
+  ws.addEventListener('error', () => {
+    log('Error de WebSocket. Revisa PARTYKIT_HOST en el HTML.', 'error');
+  });
+}
+
+// Central dispatcher for everything the PartyKit server sends us. This merges
+// lifecycle events ("connected", "peer-joined", ...) with relayed game messages.
+function dispatchServerMessage(msg){
+  switch(msg.type){
+    case 'connected': {
+      // Server assigned our role. If we asked to host but became client,
+      // a pre-existing host has this roomId — bail out cleanly.
+      state.myId = msg.connId;
+      if(state.isHost && msg.role !== 'host'){
+        alert('Ese código ya lo tiene otra sala en curso. Regenera uno nuevo.');
+        try { state.ws.close(); } catch(e){}
+        return;
+      }
+      if(!state.isHost && msg.role === 'host'){
+        // We tried to join but the room was empty — there is no host to join.
+        alert('Esa sala no existe (o el host se fue). Verifica el código.');
+        try { state.ws.close(); } catch(e){}
+        return;
+      }
+      if(msg.role === 'host'){
+        log('Sala creada con ID: '+msg.roomId, 'success');
+        state.players[msg.connId] = { nickname: state.myNickname, color: state.myColor, score: 0, isHost: true };
+        goToWaitingRoom();
+        document.getElementById('room-code-text').textContent = msg.roomId;
+        show('room-code-display');
+        show('host-controls');
+        setHostStatus(true);
+        renderWaitingPlayers();
+      } else {
+        state.hostId = msg.hostId;
+        wsSend({ to: 'host', type: 'join', nickname: state.myNickname, color: state.myColor });
+        goToWaitingRoom();
+        show('client-waiting');
+        log('Conectado. Esperando al host...', 'success');
+      }
+      return;
+    }
+    case 'peer-joined': {
+      // Host-only lifecycle. The real "join" payload (with nickname/color)
+      // comes separately from the client; nothing to do here.
+      return;
+    }
+    case 'peer-left': {
+      if(!state.isHost) return;
+      const p = state.players[msg.from];
+      log((p ? p.nickname : msg.from) + ' se desconectó', 'warn');
+      delete state.players[msg.from];
+      renderWaitingPlayers();
+      broadcastPlayers();
+      return;
+    }
+    case 'host-left': {
+      if(state.isHost) return;
+      alert('El host se desconectó. La sala se cerró.');
+      location.reload();
+      return;
+    }
+  }
+
+  // Anything else is a relayed game message. Dispatch based on our role.
+  if(state.isHost){
+    handleHostMessage(msg.from, msg);
+  } else {
+    handleClientMessage(msg);
+  }
+}
+
+function createRoom(){
+  const code = 'mpls-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+  openRoom(code, 'host');
 }
 
 function joinRoom(){
   let roomId = document.getElementById('join-room-id').value.trim();
   if(!roomId){ alert('Escribe el código de la sala'); return; }
-  // Host IDs are "mpls-" (lowercase prefix) + 6 uppercase alphanumeric chars.
-  // Normalize typed input so mobile auto-capitalization or case typos still match.
+  // Normalize so mobile auto-capitalization / case typos still match the
+  // "mpls-" + uppercase-suffix format that createRoom() uses.
   roomId = 'mpls-' + roomId.replace(/^mpls[-_ ]?/i, '').toUpperCase();
-  state.isHost = false;
-  state.peer = new Peer(undefined, PEER_OPTS);
+  openRoom(roomId, 'client');
+}
 
-  let connectTimeout = null;
-  let retryCount = 0;
-  const MAX_RETRIES = 3;
-  const RETRY_DELAYS_MS = [1500, 3000, 5000];
-
-  const attemptConnect = () => {
-    log('Conectando a la sala '+roomId+(retryCount>0?' (reintento '+retryCount+')...':'...'));
-    state.hostConn = state.peer.connect(roomId, { reliable: true });
-    state.hostConn.on('open', ()=> {
-      if(connectTimeout){ clearTimeout(connectTimeout); connectTimeout = null; }
-      state.hostConn.send({
-        type: 'join',
-        nickname: state.myNickname,
-        color: state.myColor
-      });
-      goToWaitingRoom();
-      show('client-waiting');
-      log('Conectado. Esperando al host...', 'success');
-    });
-    state.hostConn.on('data', data => handleClientMessage(data));
-    state.hostConn.on('close', ()=> {
-      log('Conexión cerrada', 'error');
-      alert('Desconectado del host');
-      location.reload();
-    });
-    state.hostConn.on('error', err => {
-      const msg = peerErrorMessage(err);
-      log('Error conexión: '+msg, 'error');
-    });
-  };
-
-  state.peer.on('open', id => {
-    state.myId = id;
-    attemptConnect();
-    // Fail loud if the data channel never opens (e.g. host tab closed, NAT blocked).
-    connectTimeout = setTimeout(()=>{
-      if(state.hostConn && !state.hostConn.open){
-        log('Timeout al conectar con el host', 'error');
-        alert('No pude conectar con el host. Verifica el código o que el host siga en la sala.');
-        try { state.hostConn.close(); } catch(e){}
-        try { state.peer.destroy(); } catch(e){}
-      }
-    }, 10000);
-  });
-
-  state.peer.on('disconnected', () => {
-    log('Señalización caída, reconectando...', 'warn');
-    try { state.peer.reconnect(); } catch(e){}
-  });
-
-  state.peer.on('error', err => {
-    const msg = peerErrorMessage(err);
-    log(msg, 'error');
-    // Known PeerJS race: peer-unavailable can fire right after open if the
-    // signaling shard hasn't seen the host yet, or the host peer was dropped
-    // by the free cloud. Retry a couple of times with backoff before giving up.
-    if(err.type === 'peer-unavailable' && retryCount < MAX_RETRIES){
-      const delay = RETRY_DELAYS_MS[retryCount];
-      retryCount++;
-      log('Reintentando en '+(delay/1000)+'s ('+retryCount+'/'+MAX_RETRIES+')...', 'warn');
-      setTimeout(attemptConnect, delay);
-      return;
-    }
-    if(connectTimeout){ clearTimeout(connectTimeout); connectTimeout = null; }
-    if(err.type === 'peer-unavailable'){
-      alert('Sala no encontrada tras varios intentos. Pide al host que recargue la página y genere un código nuevo.');
-    } else {
-      alert(msg);
-    }
-    try { state.peer.destroy(); } catch(e){}
-  });
+// Host escape hatch: close the current WebSocket and create a new room with
+// a fresh code. Useful if the current code is somehow stuck or shared wrong.
+function regenerateRoom(){
+  if(!state.isHost) return;
+  if(!confirm('Esto generará un código nuevo y desconectará a cualquier jugador ya conectado. ¿Continuar?')) return;
+  log('Regenerando sala...', 'warn');
+  state.regenerating = true;
+  try { state.ws && state.ws.close(); } catch(e){}
+  state.ws = null;
+  state.players = {};
+  state.myId = null;
+  setHostStatus(false);
+  setTimeout(() => { state.regenerating = false; createRoom(); }, 300);
 }
 
 function goToWaitingRoom(){
@@ -645,10 +599,11 @@ function handleClientMessage(data){
 
 function sendToHost(msg){
   if(state.isHost){ return; }
-  if(state.hostConn && state.hostConn.open){ state.hostConn.send(msg); }
+  wsSend({ to: 'host', ...msg });
 }
 function broadcastToAll(msg){
-  Object.values(state.connections).forEach(c => { if(c.open) c.send(msg); });
+  // Only the host calls this; server fans out to everyone except sender.
+  wsSend({ to: 'all', ...msg });
 }
 function broadcastPlayers(){
   broadcastToAll({ type: 'players-update', players: state.players });
