@@ -140,6 +140,17 @@ export function submitSwapPick(label) {
   }
 }
 
+export function submitChat(rawText) {
+  const text = (rawText || '').trim();
+  if (!text) return;
+  const meNow = get(me);
+  if (meNow.isHost) {
+    handleChat(meNow.id, text);
+  } else {
+    send({ to: 'host', type: 'chat', text });
+  }
+}
+
 // =======================================================================
 // Transport plumbing
 // =======================================================================
@@ -269,6 +280,7 @@ function handleRelayedMessage(msg) {
       case 'route':        return handleRoute(msg.from, msg.targetId);
       case 'intercept':    return handleIntercept(msg.from);
       case 'swap-pick':    return handleSwapPick(msg.from, msg.label);
+      case 'chat':         return handleChat(msg.from, msg.text);
     }
   }
   // Host also sees its own broadcasts? No — PartyKit excludes sender. That's
@@ -379,12 +391,57 @@ function applyBroadcastLocally(msg) {
       }));
       view.set('final');
       return;
+    case 'chat': {
+      game.update((g) => {
+        const entry = {
+          id: msg.id,
+          fromId: msg.fromId,
+          nickname: msg.nickname,
+          color: msg.color,
+          text: msg.text,
+          ts: msg.ts,
+        };
+        const next = [...g.chatMessages, entry];
+        return { ...g, chatMessages: next.length > 80 ? next.slice(-80) : next };
+      });
+      return;
+    }
   }
 }
 
 // =======================================================================
 // Host handlers
 // =======================================================================
+
+// Per-sender sliding-window rate limit: 5 messages per 10 seconds.
+const chatWindowMs = 10000;
+const chatMaxPerWindow = 5;
+const chatHistory = new Map();       // senderId -> number[] (timestamps)
+let chatIdCounter = 0;
+
+function handleChat(fromId, rawText) {
+  const text = (rawText || '').toString().slice(0, 240).trim();
+  if (!text) return;
+
+  const now = Date.now();
+  const recent = (chatHistory.get(fromId) || []).filter((t) => now - t < chatWindowMs);
+  if (recent.length >= chatMaxPerWindow) return;
+  recent.push(now);
+  chatHistory.set(fromId, recent);
+
+  const player = get(game).players[fromId];
+  if (!player) return;
+
+  broadcast({
+    type: 'chat',
+    id: `${now}-${chatIdCounter++}`,
+    fromId,
+    nickname: player.nickname,
+    color: player.color,
+    text,
+    ts: now,
+  });
+}
 
 function handleClientJoin(fromId, data) {
   // Prevent duplicate joins
@@ -732,6 +789,7 @@ function teardown() {
   hostState.challenger = null;
   hostState.scores = {};
   hostState.swapContext = null;
+  chatHistory.clear();
 
   if (connection) { connection.close(); connection = null; }
   game.set({
@@ -755,6 +813,7 @@ function teardown() {
     scores: {},
     lastResolution: null,
     networkLog: [],
+    chatMessages: [],
     winnerId: null,
   });
   me.update((m) => ({ ...m, id: null, isHost: false }));

@@ -53,6 +53,9 @@ export const game = writable({
   // Public event feed
   networkLog: [],    // { ts, line, severity }
 
+  // Chat
+  chatMessages: [],  // { id, fromId, nickname, color, text, ts }
+
   // Final outcome
   winnerId: null,
 });

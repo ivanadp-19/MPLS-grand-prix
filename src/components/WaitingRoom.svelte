@@ -2,6 +2,7 @@
   import { game, me, nodeLabels } from '../lib/stores.js';
   import { DEFAULT_CONFIG } from '../lib/labelswap.js';
   import { startGame, regenerateRoom, leaveRoom } from '../lib/engine.js';
+  import Chat from './Chat.svelte';
 
   let overflowThreshold = $state(DEFAULT_CONFIG.overflowThreshold);
   let routeTimeMs = $state(DEFAULT_CONFIG.routeTimeMs);
@@ -81,6 +82,11 @@
         <button class="ghost" onclick={leaveRoom}>Disconnect</button>
       </div>
     {/if}
+  </div>
+
+  <div class="card">
+    <h3>:: Operator Channel</h3>
+    <Chat />
   </div>
 
   <div class="card">
