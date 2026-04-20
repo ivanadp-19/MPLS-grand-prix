@@ -221,6 +221,7 @@
       <div id="room-code-display" class="room-code hidden">
         <div style="color:#cbd5e1; font-size:0.9rem; margin-bottom:8px;">Código de sala (compártelo con los jugadores):</div>
         <div class="room-code-value" id="room-code-text">---</div>
+        <div id="host-status" style="margin-top:8px; font-size:0.9rem; font-weight:600;">🟢 En línea</div>
         <button onclick="copyRoomCode()" style="margin-top:10px;">Copiar código</button>
       </div>
 
@@ -416,6 +417,7 @@ function createRoom(){
     document.getElementById('room-code-text').textContent = id;
     show('room-code-display');
     show('host-controls');
+    setHostStatus(true);
     renderWaitingPlayers();
   });
 
@@ -439,12 +441,34 @@ function createRoom(){
     });
   });
 
+  // The free 0.peerjs.com cloud drops idle peers. Auto-reconnect so the
+  // host's room ID stays reachable while they wait for players to join.
+  state.peer.on('disconnected', () => {
+    log('Señalización desconectada, reconectando...', 'warn');
+    setHostStatus(false);
+    try { state.peer.reconnect(); } catch(e){ log('No se pudo reconectar: '+e.message, 'error'); }
+  });
+  state.peer.on('close', () => {
+    log('Peer cerrado', 'error');
+    setHostStatus(false);
+  });
+
   state.peer.on('error', err => {
     const msg = peerErrorMessage(err);
     log(msg, 'error');
     if(err.type === 'unavailable-id'){ alert('ID no disponible, intenta de nuevo'); location.reload(); return; }
-    alert(msg);
+    // 'disconnected' / 'network' / 'socket-*' are handled by reconnect logic above;
+    // don't blow up the host's session with a modal for those.
+    const transient = ['disconnected','network','socket-error','socket-closed'];
+    if(!transient.includes(err.type)) alert(msg);
   });
+}
+
+function setHostStatus(online){
+  const el = document.getElementById('host-status');
+  if(!el) return;
+  el.textContent = online ? '🟢 En línea' : '🔴 Desconectado — reconectando...';
+  el.style.color = online ? '#10b981' : '#ef4444';
 }
 
 function joinRoom(){
@@ -457,10 +481,12 @@ function joinRoom(){
   state.peer = new Peer(undefined, PEER_OPTS);
 
   let connectTimeout = null;
-  let retriedOnce = false;
+  let retryCount = 0;
+  const MAX_RETRIES = 2;
+  const RETRY_DELAYS_MS = [1500, 3000];
 
   const attemptConnect = () => {
-    log('Conectando a la sala '+roomId+(retriedOnce?' (reintento)...':'...'));
+    log('Conectando a la sala '+roomId+(retryCount>0?' (reintento '+retryCount+')...':'...'));
     state.hostConn = state.peer.connect(roomId, { reliable: true });
     state.hostConn.on('open', ()=> {
       if(connectTimeout){ clearTimeout(connectTimeout); connectTimeout = null; }
@@ -499,19 +525,30 @@ function joinRoom(){
     }, 10000);
   });
 
+  state.peer.on('disconnected', () => {
+    log('Señalización caída, reconectando...', 'warn');
+    try { state.peer.reconnect(); } catch(e){}
+  });
+
   state.peer.on('error', err => {
     const msg = peerErrorMessage(err);
     log(msg, 'error');
     // Known PeerJS race: peer-unavailable can fire right after open if the
-    // signaling shard hasn't seen the host yet. Retry once before giving up.
-    if(err.type === 'peer-unavailable' && !retriedOnce){
-      retriedOnce = true;
-      log('Reintentando conexión en 1.5s...', 'warn');
-      setTimeout(attemptConnect, 1500);
+    // signaling shard hasn't seen the host yet, or the host peer was dropped
+    // by the free cloud. Retry a couple of times with backoff before giving up.
+    if(err.type === 'peer-unavailable' && retryCount < MAX_RETRIES){
+      const delay = RETRY_DELAYS_MS[retryCount];
+      retryCount++;
+      log('Reintentando en '+(delay/1000)+'s ('+retryCount+'/'+MAX_RETRIES+')...', 'warn');
+      setTimeout(attemptConnect, delay);
       return;
     }
     if(connectTimeout){ clearTimeout(connectTimeout); connectTimeout = null; }
-    alert(msg);
+    if(err.type === 'peer-unavailable'){
+      alert('Sala no encontrada tras varios intentos. Pide al host que recargue la página y genere un código nuevo.');
+    } else {
+      alert(msg);
+    }
     try { state.peer.destroy(); } catch(e){}
   });
 }
