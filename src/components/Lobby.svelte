@@ -17,40 +17,33 @@
     showCreatePanel = false;
   }
   function validateNickname() {
-    const nick = $me.nickname.trim();
-    if (!nick) { alert('Escribe un apodo primero'); return false; }
+    const nick = ($me.nickname || '').trim();
+    if (!nick) { alert('OPERATOR ID REQUIRED'); return false; }
     me.update((m) => ({ ...m, nickname: nick }));
     return true;
   }
-  function pickColor(c) {
-    me.update((m) => ({ ...m, color: c }));
-  }
-  function onCreate() {
-    if (!validateNickname()) return;
-    createRoom();
-  }
-  function onJoin() {
-    if (!validateNickname()) return;
-    joinRoom(joinCode);
-  }
+  function pickColor(c) { me.update((m) => ({ ...m, color: c })); }
+  function onCreate() { if (validateNickname()) createRoom(); }
+  function onJoin() { if (validateNickname()) joinRoom(joinCode); }
 </script>
 
 <div id="lobby">
-  <h1>MPLS Grand Prix</h1>
-  <p class="subtitle">Compite todos-contra-todos dominando el enrutamiento MPLS</p>
+  <h1>LABEL SWAP</h1>
+  <p class="subtitle">:: MPLS MEMORY TERMINAL :: BATTLE ROYALE ::</p>
 
   <div class="card">
-    <label for="nickname">Tu apodo</label>
+    <label for="nickname">OPERATOR ID</label>
     <input
       id="nickname"
+      class="prompt"
       type="text"
-      placeholder="Ej: NetAdmin99"
+      placeholder="netadmin_99"
       maxlength="16"
       bind:value={$me.nickname}
     />
 
-    <div style="display:block; margin-top:10px; color:#cbd5e1; font-size:0.9rem;">Color de jugador</div>
-    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+    <div style="display:block; margin-top:12px; color:var(--fg-dim); font-family:var(--mono-ui); font-size:0.85rem; text-transform:uppercase; letter-spacing:0.08em;">NODE COLOR</div>
+    <div class="flex mt-1">
       {#each COLORS as c}
         <div
           class="color-swatch"
@@ -66,33 +59,38 @@
 
     <div class="lobby-buttons">
       <button class="mode-btn" onclick={openCreate}>
-        <span class="icon">🎮</span>
-        <span>Crear Sala</span>
-        <small style="opacity:0.8">Sé el anfitrión</small>
+        <span class="icon">⟦HOST⟧</span>
+        <span>INITIALIZE ROOM</span>
+        <small>// boot a new session</small>
       </button>
-      <button class="mode-btn secondary" onclick={openJoin}>
-        <span class="icon">🔗</span>
-        <span>Unirse</span>
-        <small style="opacity:0.8">Con código de sala</small>
+      <button class="mode-btn ghost" onclick={openJoin}>
+        <span class="icon">⟦LINK⟧</span>
+        <span>JOIN SESSION</span>
+        <small>// enter a room code</small>
       </button>
     </div>
   </div>
 
   {#if showCreatePanel}
-    <div class="card">
-      <h2>Crear nueva sala</h2>
-      <p style="color:#94a3b8; margin-bottom:15px;">Serás el host. Comparte el código con los demás jugadores (hasta 5).</p>
-      <button class="success" onclick={onCreate}>Crear sala</button>
-      <button class="secondary" onclick={() => (showCreatePanel = false)}>Cancelar</button>
+    <div class="card warn">
+      <h2>Initialize Session</h2>
+      <p class="muted" style="margin-bottom:12px;">
+        You become the host node. Share the generated code with up to 4 others.
+      </p>
+      <div class="flex">
+        <button class="warn" onclick={onCreate}>Boot Room</button>
+        <button class="ghost" onclick={() => (showCreatePanel = false)}>Abort</button>
+      </div>
     </div>
   {/if}
 
   {#if showJoinPanel}
-    <div class="card">
-      <h2>Unirse a una sala</h2>
-      <label for="join-code">Código de sala (ID del host)</label>
+    <div class="card warn">
+      <h2>Join Session</h2>
+      <label for="join-code">Room Code</label>
       <input
         id="join-code"
+        class="prompt"
         type="text"
         placeholder="mpls-XXXXXX"
         autocapitalize="off"
@@ -101,19 +99,26 @@
         spellcheck="false"
         bind:value={joinCode}
       />
-      <button class="success" onclick={onJoin}>Unirse</button>
-      <button class="secondary" onclick={() => (showJoinPanel = false)}>Cancelar</button>
+      <div class="flex mt-2">
+        <button class="warn" onclick={onJoin}>Link Up</button>
+        <button class="ghost" onclick={() => (showJoinPanel = false)}>Abort</button>
+      </div>
     </div>
   {/if}
 
   <div class="card">
-    <h3>¿Cómo se juega?</h3>
-    <p style="line-height:1.6; color:#cbd5e1;">
-      En cada ronda todos los jugadores responden el mismo reto MPLS simultáneamente: identificar
-      operaciones (<code>PUSH</code>, <code>SWAP</code>, <code>POP</code>), siguientes saltos en un LSP,
-      labels asignados por LDP, roles de router (<code>LER/PE</code> vs <code>LSR/P</code>), y más.
-      Ganas puntos por respuestas correctas y por velocidad. Al final de 10 rondas gana quien tenga
-      más puntos en el ranking.
+    <h3>Protocol Brief</h3>
+    <p class="muted" style="line-height:1.7;">
+      Each node is assigned <code>2</code> secret animal labels. All labels are revealed for <code>10s</code>,
+      then hidden — everything after is memory. On your turn, a Package arrives tagged with one animal. Route it to
+      the node you believe holds that label. Correct routes trigger a silent partial swap: the packaged animal moves
+      to you, and the receiver steals one of your other labels back.
+    </p>
+    <p class="muted" style="margin-top:10px; line-height:1.7;">
+      Other nodes can <code>INTERCEPT</code> within <code>5s</code> to flag your route as wrong. Correct intercept =
+      challenger +1. False intercept = challenger <span class="alert-text">+1 OVERFLOW</span>.
+      Hit the overflow threshold (default <code>3</code>) and you go <span class="alert-text">OFFLINE</span>.
+      Last node standing wins the link.
     </p>
   </div>
 </div>
