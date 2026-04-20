@@ -1,45 +1,89 @@
 # MPLS Grand Prix
 
-Juego multijugador online todos-contra-todos para aprender enrutamiento MPLS (Multiprotocol Label Switching).
+Juego multijugador online todos-contra-todos para aprender enrutamiento MPLS
+(Multiprotocol Label Switching).
 
-**Jugar:** https://ivanadp-19.github.io/MPLS-grand-prix/
+## Stack
+
+- **Frontend:** Svelte 5 (con runes) + Vite, desplegado en Cloudflare Pages.
+- **Backend multijugador:** PartyKit (WebSocket sobre Cloudflare Durable Objects).
+- Sin base de datos; el estado de cada sala vive en el Durable Object mientras
+  dura la partida y se descarta al cerrarse.
 
 ## Cómo jugar
 
-1. Un jugador (host) abre la URL y pulsa **Crear Sala**.
+1. Un jugador abre la URL y pulsa **Crear Sala**.
 2. Comparte el código generado (`mpls-XXXXXX`) con los demás jugadores.
-3. Los demás entran a la misma URL y pulsan **Unirse**, pegan el código.
+3. Los demás abren la misma URL, pegan el código y pulsan **Unirse**.
 4. El host configura rondas y tiempo, y pulsa **Iniciar partida**.
-5. En cada ronda todos responden el mismo reto MPLS en paralelo. Gana quien tenga más puntos.
+5. Cada ronda todos responden el mismo reto MPLS en paralelo. Gana quien tenga
+   más puntos tras N rondas.
 
-## Tecnología
+## Estructura del repo
 
-- HTML/CSS/JavaScript puro en el cliente (un solo archivo: `index.html`)
-- **PartyKit** (WebSocket en Cloudflare) como backend de mensajería multijugador
-- Servidor en `party/server.js` — el host de la partida vive en el browser, el servidor solo retransmite mensajes
+```
+.
+├── src/                    # Código Svelte (frontend)
+│   ├── App.svelte
+│   ├── main.js
+│   ├── app.css
+│   ├── components/         # Lobby, WaitingRoom, GameView, TopologyMap, …
+│   └── lib/                # engine, transport, stores, challenges, topology
+├── party/
+│   └── server.js           # Servidor PartyKit (relay de mensajes por sala)
+├── index.html              # Plantilla Vite
+├── vite.config.js
+├── svelte.config.js
+├── partykit.json
+└── package.json
+```
+
+## Desarrollo local
+
+Necesitas Node 18+.
+
+```bash
+npm install
+
+# Terminal 1: servidor PartyKit en 127.0.0.1:1999
+npm run party:dev
+
+# Terminal 2: Vite dev server en 127.0.0.1:5173 (auto-detecta localhost y apunta al party dev)
+npm run dev
+```
+
+Abre <http://127.0.0.1:5173> en dos pestañas para simular dos jugadores.
 
 ## Deploy
 
-Se hace una sola vez; después el juego funciona de forma estable.
+### Backend (PartyKit)
 
 ```bash
-# 1. Instalar dependencias (necesitas Node 18+)
-npm install
-
-# 2. Desarrollo local (servidor en http://127.0.0.1:1999)
-npm run dev
-# Abre index.html con un servidor estático, p.ej.:
-#   python3 -m http.server 8000
-# El cliente detecta automáticamente localhost y usa ws://127.0.0.1:1999
-
-# 3. Deploy a Cloudflare (primera vez pide login)
-npm run deploy
-# El CLI imprime una URL tipo: https://mpls-grand-prix.TU-USUARIO.partykit.dev
+npm run party:deploy
 ```
 
-Después del primer deploy, abre `index.html` y reemplaza `REEMPLAZAR-USUARIO`
-en la constante `PARTYKIT_HOST` por el subdominio que te dio el CLI. Commit
-y push — GitHub Pages servirá el HTML apuntando al backend de PartyKit.
+Deja la URL tipo `mpls-grand-prix.<usuario>.partykit.dev` como `PARTYKIT_HOST`
+en `src/lib/transport.js` (o defínelo con la variable de entorno
+`VITE_PARTYKIT_HOST` al buildear).
+
+### Frontend (Cloudflare Pages)
+
+Primera vez:
+
+```bash
+npx wrangler login        # autoriza Cloudflare (browser OAuth)
+```
+
+Luego en cada deploy:
+
+```bash
+npm run build
+npm run pages:deploy
+```
+
+Esto publica el contenido de `dist/` al proyecto `mpls-grand-prix` en
+Cloudflare Pages. La URL de producción será `mpls-grand-prix.pages.dev`
+(o tu dominio custom).
 
 ## Tipos de retos
 
