@@ -387,7 +387,7 @@ function copyRoomCode(){
 // que imprimió el CLI. Ejemplo: "mpls-grand-prix.tu-usuario.partykit.dev".
 const PARTYKIT_HOST = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
   ? location.hostname + ':1999'
-  : 'mpls-grand-prix.REEMPLAZAR-USUARIO.partykit.dev';
+  : 'mpls-grand-prix.ivanadp-19.partykit.dev';
 const WS_PROTO = PARTYKIT_HOST.startsWith('localhost') || PARTYKIT_HOST.startsWith('127.') ? 'ws' : 'wss';
 
 function wsUrl(roomId){

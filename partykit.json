@@ -1,5 +1,6 @@
 {
   "$schema": "https://www.partykit.io/schema.json",
   "name": "mpls-grand-prix",
-  "main": "party/server.js"
+  "main": "party/server.js",
+  "compatibilityDate": "2024-11-01"
 }
