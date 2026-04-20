@@ -2,7 +2,7 @@
 
 Juego multijugador online todos-contra-todos para aprender enrutamiento MPLS (Multiprotocol Label Switching).
 
-**Jugar:** https://TU-USUARIO.github.io/mpls-grand-prix/
+**Jugar:** https://ivanadp-19.github.io/MPLS-grand-prix/
 
 ## Cómo jugar
 

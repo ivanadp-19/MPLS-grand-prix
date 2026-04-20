@@ -196,7 +196,8 @@
     <div id="join-panel" class="card hidden">
       <h2>Unirse a una sala</h2>
       <label>Código de sala (ID del host)</label>
-      <input type="text" id="join-room-id" placeholder="mpls-XXXXXX">
+      <input type="text" id="join-room-id" placeholder="mpls-XXXXXX"
+             autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false">
       <button class="success" onclick="joinRoom()">Unirse</button>
       <button class="secondary" onclick="document.getElementById('join-panel').classList.add('hidden')">Cancelar</button>
     </div>
@@ -379,10 +380,33 @@ function copyRoomCode(){
 // =========================================================================
 // CREAR / UNIRSE A SALA (PeerJS)
 // =========================================================================
+const PEER_OPTS = {
+  debug: 1,
+  config: { iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' }
+  ]}
+};
+const PEER_ERRORS = {
+  'peer-unavailable':    'Sala no encontrada. Revisa el código.',
+  'unavailable-id':      'Ese ID ya está en uso, intenta de nuevo.',
+  'network':             'Problema de red. Verifica tu conexión.',
+  'disconnected':        'Desconectado del servidor de señalización.',
+  'server-error':        'Servidor de señalización caído. Intenta en un minuto.',
+  'socket-error':        'No se pudo contactar al servidor. Reintenta.',
+  'socket-closed':       'Conexión cerrada inesperadamente.',
+  'ssl-unavailable':     'Problema SSL con el servidor de señalización.',
+  'browser-incompatible':'Tu navegador no soporta WebRTC.',
+  'webrtc':              'Error WebRTC — probablemente un firewall o NAT estricto.'
+};
+function peerErrorMessage(err){
+  return PEER_ERRORS[err.type] || ('Error: ' + (err.type || err.message || 'desconocido'));
+}
+
 function createRoom(){
   state.isHost = true;
   const randomId = 'mpls-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-  state.peer = new Peer(randomId, { debug: 1 });
+  state.peer = new Peer(randomId, PEER_OPTS);
 
   state.peer.on('open', id => {
     state.myId = id;
@@ -416,22 +440,30 @@ function createRoom(){
   });
 
   state.peer.on('error', err => {
-    log('Error: '+err.type, 'error');
-    if(err.type==='unavailable-id'){ alert('ID no disponible, intenta de nuevo'); location.reload(); }
+    const msg = peerErrorMessage(err);
+    log(msg, 'error');
+    if(err.type === 'unavailable-id'){ alert('ID no disponible, intenta de nuevo'); location.reload(); return; }
+    alert(msg);
   });
 }
 
 function joinRoom(){
-  const roomId = document.getElementById('join-room-id').value.trim();
+  let roomId = document.getElementById('join-room-id').value.trim();
   if(!roomId){ alert('Escribe el código de la sala'); return; }
+  // Host IDs are "mpls-" (lowercase prefix) + 6 uppercase alphanumeric chars.
+  // Normalize typed input so mobile auto-capitalization or case typos still match.
+  roomId = 'mpls-' + roomId.replace(/^mpls[-_ ]?/i, '').toUpperCase();
   state.isHost = false;
-  state.peer = new Peer(undefined, { debug: 1 });
+  state.peer = new Peer(undefined, PEER_OPTS);
 
-  state.peer.on('open', id => {
-    state.myId = id;
-    log('Conectando a la sala '+roomId+'...');
+  let connectTimeout = null;
+  let retriedOnce = false;
+
+  const attemptConnect = () => {
+    log('Conectando a la sala '+roomId+(retriedOnce?' (reintento)...':'...'));
     state.hostConn = state.peer.connect(roomId, { reliable: true });
     state.hostConn.on('open', ()=> {
+      if(connectTimeout){ clearTimeout(connectTimeout); connectTimeout = null; }
       state.hostConn.send({
         type: 'join',
         nickname: state.myNickname,
@@ -447,12 +479,40 @@ function joinRoom(){
       alert('Desconectado del host');
       location.reload();
     });
-    state.hostConn.on('error', err => log('Error conexión: '+err, 'error'));
+    state.hostConn.on('error', err => {
+      const msg = peerErrorMessage(err);
+      log('Error conexión: '+msg, 'error');
+    });
+  };
+
+  state.peer.on('open', id => {
+    state.myId = id;
+    attemptConnect();
+    // Fail loud if the data channel never opens (e.g. host tab closed, NAT blocked).
+    connectTimeout = setTimeout(()=>{
+      if(state.hostConn && !state.hostConn.open){
+        log('Timeout al conectar con el host', 'error');
+        alert('No pude conectar con el host. Verifica el código o que el host siga en la sala.');
+        try { state.hostConn.close(); } catch(e){}
+        try { state.peer.destroy(); } catch(e){}
+      }
+    }, 10000);
   });
 
   state.peer.on('error', err => {
-    log('Error: '+err.type, 'error');
-    if(err.type==='peer-unavailable'){ alert('Sala no encontrada'); location.reload(); }
+    const msg = peerErrorMessage(err);
+    log(msg, 'error');
+    // Known PeerJS race: peer-unavailable can fire right after open if the
+    // signaling shard hasn't seen the host yet. Retry once before giving up.
+    if(err.type === 'peer-unavailable' && !retriedOnce){
+      retriedOnce = true;
+      log('Reintentando conexión en 1.5s...', 'warn');
+      setTimeout(attemptConnect, 1500);
+      return;
+    }
+    if(connectTimeout){ clearTimeout(connectTimeout); connectTimeout = null; }
+    alert(msg);
+    try { state.peer.destroy(); } catch(e){}
   });
 }
 
