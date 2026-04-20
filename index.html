@@ -222,7 +222,10 @@
         <div style="color:#cbd5e1; font-size:0.9rem; margin-bottom:8px;">Código de sala (compártelo con los jugadores):</div>
         <div class="room-code-value" id="room-code-text">---</div>
         <div id="host-status" style="margin-top:8px; font-size:0.9rem; font-weight:600;">🟢 En línea</div>
-        <button onclick="copyRoomCode()" style="margin-top:10px;">Copiar código</button>
+        <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap; justify-content:center;">
+          <button onclick="copyRoomCode()">Copiar código</button>
+          <button class="secondary" onclick="regenerateRoom()" title="Si un jugador no puede entrar, genera un código nuevo">Regenerar código</button>
+        </div>
       </div>
 
       <h3>Jugadores conectados (<span id="player-count">0</span>/5)</h3>
@@ -382,11 +385,24 @@ function copyRoomCode(){
 // CREAR / UNIRSE A SALA (PeerJS)
 // =========================================================================
 const PEER_OPTS = {
-  debug: 1,
-  config: { iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:global.stun.twilio.com:3478' }
-  ]}
+  debug: 2,
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:global.stun.twilio.com:3478' },
+      // PeerJS's public TURN servers — required when both peers are behind
+      // symmetric NAT (e.g. laptop on home wifi + phone on mobile data).
+      {
+        urls: [
+          'turn:eu-0.turn.peerjs.com:3478',
+          'turn:us-0.turn.peerjs.com:3478'
+        ],
+        username: 'peerjs',
+        credential: 'peerjsp'
+      }
+    ],
+    sdpSemantics: 'unified-plan'
+  }
 };
 const PEER_ERRORS = {
   'peer-unavailable':    'Sala no encontrada. Revisa el código.',
@@ -471,6 +487,23 @@ function setHostStatus(online){
   el.style.color = online ? '#10b981' : '#ef4444';
 }
 
+// Host escape hatch: destroy the current peer and create a new one with a
+// fresh ID. Use when a joiner says "Sala no encontrada" even though the host
+// thinks it is online — the free PeerJS cloud sometimes keeps an orphaned
+// registration that no joiner can actually reach.
+function regenerateRoom(){
+  if(!state.isHost) return;
+  if(!confirm('Esto generará un código nuevo y desconectará a cualquier jugador ya conectado. ¿Continuar?')) return;
+  log('Regenerando sala...', 'warn');
+  try { for(const id in state.connections){ state.connections[id].close(); } } catch(e){}
+  state.connections = {};
+  state.players = {};
+  try { state.peer && state.peer.destroy(); } catch(e){}
+  state.peer = null;
+  setHostStatus(false);
+  createRoom();
+}
+
 function joinRoom(){
   let roomId = document.getElementById('join-room-id').value.trim();
   if(!roomId){ alert('Escribe el código de la sala'); return; }
@@ -482,8 +515,8 @@ function joinRoom(){
 
   let connectTimeout = null;
   let retryCount = 0;
-  const MAX_RETRIES = 2;
-  const RETRY_DELAYS_MS = [1500, 3000];
+  const MAX_RETRIES = 3;
+  const RETRY_DELAYS_MS = [1500, 3000, 5000];
 
   const attemptConnect = () => {
     log('Conectando a la sala '+roomId+(retryCount>0?' (reintento '+retryCount+')...':'...'));
