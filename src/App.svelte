@@ -1,11 +1,11 @@
 <script>
-  import { view, pushLog } from './lib/stores.js';
+  import { view, log } from './lib/stores.js';
   import Lobby from './components/Lobby.svelte';
   import WaitingRoom from './components/WaitingRoom.svelte';
   import GameView from './components/GameView.svelte';
   import FinalRanking from './components/FinalRanking.svelte';
 
-  pushLog('LABEL SWAP :: TERMINAL READY', 'ok');
+  log('Bienvenido a MPLS Grand Prix');
 </script>
 
 <div class="container">

@@ -1,9 +1,8 @@
-import { writable, derived } from 'svelte/store';
-import { DEFAULT_CONFIG, nodeLabel } from './labelswap.js';
+import { writable } from 'svelte/store';
 
 export const COLORS = [
-  '#00ff41', '#ffb000', '#ff3c3c', '#00b8ff',
-  '#ff00ff', '#34d399', '#f472b6', '#c084fc',
+  '#ef4444', '#f59e0b', '#10b981', '#3b82f6',
+  '#8b5cf6', '#ec4899', '#14b8a6', '#f97316',
 ];
 
 // Which top-level view to render: 'lobby' | 'waiting' | 'game' | 'final'
@@ -17,61 +16,30 @@ export const me = writable({
   isHost: false,
 });
 
-// Full game state. The host holds the authoritative copy of `labels`.
-// Clients only see `publicLabels` during the reveal phase and
-// `swapChoiceOptions` when they personally owe a swap choice.
+// Full game state (mirrors the PartyKit-synced host state for everyone)
 export const game = writable({
-  phase: 'waiting',   // 'waiting' | 'reveal' | 'routing' | 'challenging' | 'swap-choice' | 'resolving' | 'final'
   roomId: null,
   hostId: null,
-  hostOnline: false,
-  config: { ...DEFAULT_CONFIG },
-
-  players: {},        // connId -> { nickname, color, isHost, joinedAt }
-  turnOrder: [],      // array of connId in stable display order
-  eliminated: [],     // array of eliminated connIds
-
-  // Per-turn transient state
-  round: 0,
-  currentPlayerId: null,
-  packageAnimal: null,
-  deadlineMs: 0,
-  routingTarget: null,
-  challenger: null,
-
-  // Reveal / private channels
-  publicLabels: null,             // only non-null during reveal phase
-  swapChoiceFor: null,            // receiverId who owes a choice
-  swapChoiceOptions: null,        // [label, label] — only populated for me when I'm the receiver
-
-  // Scores (all players see this)
-  scores: {},        // connId -> { packetsRouted, intercepts, bufferOverflows }
-
-  // Last resolution (for log rendering + post-hoc overlay)
-  lastResolution: null,
-
-  // Public event feed
-  networkLog: [],    // { ts, line, severity }
-
-  // Chat
-  chatMessages: [],  // { id, fromId, nickname, color, text, ts }
-
-  // Final outcome
-  winnerId: null,
+  players: {},           // connId -> {nickname, color, score, answered, isHost}
+  config: { numRounds: 10, roundTime: 30 },
+  currentRound: 0,
+  totalRounds: 10,
+  roundTime: 30,
+  currentChallenge: null,
+  answeredThisRound: false,
+  myAnswerIndex: null,
+  roundResult: null,     // {correctIndex, correctAnswer, scoreDetails, explanation}
+  roundStartTime: 0,
+  hostOnline: true,
 });
 
-// Convenience: index of a player in turnOrder (for NODE-NN labelling)
-export const nodeLabels = derived(game, ($g) => {
-  const map = {};
-  $g.turnOrder.forEach((pid, i) => { map[pid] = nodeLabel(i); });
-  return map;
-});
+// Rolling event log shown in the sidebar
+export const eventLog = writable([]);
 
-export function pushLog(line, severity = 'info') {
-  game.update((g) => {
-    const ts = new Date().toLocaleTimeString('en-US', { hour12: false });
-    const entry = { ts, line, severity };
-    const next = [...g.networkLog, entry];
-    return { ...g, networkLog: next.length > 200 ? next.slice(-200) : next };
+export function log(msg, type = '') {
+  eventLog.update((entries) => {
+    const ts = new Date().toLocaleTimeString();
+    const next = [...entries, { ts, msg, type }];
+    return next.length > 120 ? next.slice(-120) : next;
   });
 }
