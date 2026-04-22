@@ -85,12 +85,13 @@
   <div class="card">
     <h3>Conceptos clave de MPLS</h3>
     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; font-size:0.9rem;">
+      <div><strong style="color:#60a5fa;">CE</strong> (Customer Edge): Router del cliente. Habla IP puro. <b>No participa en MPLS</b>.</div>
       <div><strong style="color:#60a5fa;">LER / PE</strong> (Label Edge Router / Provider Edge): Router en el borde de la red MPLS. Hace <code>PUSH</code> (ingreso) o <code>POP</code> (egreso).</div>
       <div><strong style="color:#60a5fa;">LSR / P</strong> (Label Switch Router / Provider): Router interno. Solo hace <code>SWAP</code> de etiquetas.</div>
       <div><strong style="color:#60a5fa;">LSP</strong> (Label Switched Path): Ruta unidireccional pre-establecida de ingress LER a egress LER.</div>
-      <div><strong style="color:#60a5fa;">LDP</strong> (Label Distribution Protocol): Los routers anuncian qué etiqueta esperan recibir para cada FEC, en dirección downstream → upstream.</div>
+      <div><strong style="color:#60a5fa;">LDP</strong> (Label Distribution Protocol): Distribuye asignaciones de etiquetas <b>downstream → upstream</b>. El egreso arranca.</div>
       <div><strong style="color:#60a5fa;">FEC</strong> (Forwarding Equivalence Class): Grupo de paquetes que se enrutan igual (ej. mismo destino).</div>
-      <div><strong style="color:#60a5fa;">LFIB</strong>: Tabla de switcheo MPLS. Relaciona label entrante → operación y label saliente.</div>
+      <div><strong style="color:#60a5fa;">LFIB</strong>: Tabla de switcheo MPLS construida por LDP. Relaciona label entrante → operación → label/vecino de salida.</div>
     </div>
   </div>
 </div>

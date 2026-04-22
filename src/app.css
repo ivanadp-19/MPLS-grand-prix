@@ -68,6 +68,7 @@ label { display: block; margin-top: 10px; color: #cbd5e1; font-size: 0.9rem; }
 .node.ingress .node-circle { fill: #10b981; stroke: #34d399; }
 .node.egress .node-circle { fill: #ef4444; stroke: #f87171; }
 .node.lsr .node-circle { fill: #3b82f6; stroke: #60a5fa; }
+.node.customer .node-circle { fill: #334155; stroke: #94a3b8; stroke-dasharray: 5,3; }
 .node.highlight .node-circle { fill: #f59e0b; stroke: #fbbf24; filter: drop-shadow(0 0 10px #f59e0b); }
 .node-label { fill: white; font-size: 13px; font-weight: 700; text-anchor: middle; pointer-events: none; }
 .node-role { fill: #cbd5e1; font-size: 10px; text-anchor: middle; pointer-events: none; }

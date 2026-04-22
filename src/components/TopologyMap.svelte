@@ -13,6 +13,7 @@
 
   function nodeClass(n) {
     if (highlightNode === n.id) return 'node highlight';
+    if (n.type === 'customer') return 'node customer';
     if (n.type === 'edge' && n.id === 'PE1') return 'node ingress';
     if (n.type === 'edge' && n.id === 'PE2') return 'node egress';
     return 'node lsr';
@@ -23,7 +24,7 @@
   }
 </script>
 
-<svg class="topology-svg" viewBox="0 0 600 320">
+<svg class="topology-svg" viewBox="0 0 720 320">
   {#each topo.edges as e}
     {@const n1 = nodeById(e[0])}
     {@const n2 = nodeById(e[1])}
