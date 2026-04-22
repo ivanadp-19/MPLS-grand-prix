@@ -31,6 +31,7 @@ export const game = writable({
   roundResult: null,     // {correctIndex, correctAnswer, scoreDetails, explanation}
   roundStartTime: 0,
   hostOnline: true,
+  chatMessages: [],      // { id, fromId, nickname, color, text, ts }
 });
 
 // Rolling event log shown in the sidebar

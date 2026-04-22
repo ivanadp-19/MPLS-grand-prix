@@ -88,6 +88,17 @@ export function startGame(config) {
   setTimeout(() => nextRoundHost(), 1000);
 }
 
+export function submitChat(rawText) {
+  const text = (rawText || '').trim();
+  if (!text) return;
+  const meNow = get(me);
+  if (meNow.isHost) {
+    handleChat(meNow.id, text);
+  } else {
+    sendToHost({ type: 'chat', text });
+  }
+}
+
 export function submitAnswer(index) {
   const g = get(game);
   if (g.answeredThisRound) return;
@@ -211,7 +222,52 @@ function handleRelayedMessage(msg) {
   }
 }
 
+// Chat: 240-char cap, sliding-window 5 msgs / 10 s per sender. Host is the
+// single point that validates and rebroadcasts; clients never gossip directly.
+const chatWindowMs = 10000;
+const chatMaxPerWindow = 5;
+const chatHistory = new Map();
+let chatIdCounter = 0;
+
+function handleChat(fromId, rawText) {
+  const text = (rawText || '').toString().slice(0, 240).trim();
+  if (!text) return;
+
+  const now = Date.now();
+  const recent = (chatHistory.get(fromId) || []).filter((t) => now - t < chatWindowMs);
+  if (recent.length >= chatMaxPerWindow) return;
+  recent.push(now);
+  chatHistory.set(fromId, recent);
+
+  const player = get(game).players[fromId];
+  if (!player) return;
+
+  const msg = {
+    id: `${now}-${chatIdCounter++}`,
+    fromId,
+    nickname: player.nickname,
+    color: player.color,
+    text,
+    ts: now,
+  };
+  // Append locally on the host (PartyKit excludes the sender from broadcasts).
+  appendChat(msg);
+  // And send to every other connection.
+  broadcastToAll({ type: 'chat', ...msg });
+}
+
+function appendChat(msg) {
+  game.update((g) => {
+    const next = [...g.chatMessages, msg];
+    return { ...g, chatMessages: next.length > 80 ? next.slice(-80) : next };
+  });
+}
+
 function handleHostMessage(fromId, data) {
+  if (data.type === 'chat') {
+    handleChat(fromId, data.text);
+    return;
+  }
   if (data.type === 'join') {
     game.update((g) => ({
       ...g,
@@ -276,6 +332,15 @@ function handleClientMessage(data) {
     alert(data.message);
     teardown();
     view.set('lobby');
+  } else if (data.type === 'chat') {
+    appendChat({
+      id: data.id,
+      fromId: data.fromId,
+      nickname: data.nickname,
+      color: data.color,
+      text: data.text,
+      ts: data.ts,
+    });
   }
 }
 
@@ -467,6 +532,7 @@ function teardown() {
   clientTickTimer = null;
   hostState.currentChallenge = null;
   hostState.answersReceived = {};
+  chatHistory.clear();
   if (connection) {
     connection.close();
     connection = null;
@@ -485,6 +551,7 @@ function teardown() {
     roundResult: null,
     roundStartTime: 0,
     hostOnline: false,
+    chatMessages: [],
   });
   me.update((m) => ({ ...m, id: null, isHost: false }));
 }

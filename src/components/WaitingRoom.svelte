@@ -1,6 +1,7 @@
 <script>
   import { game, me } from '../lib/stores.js';
   import { startGame, regenerateRoom } from '../lib/engine.js';
+  import Chat from './Chat.svelte';
 
   let numRounds = $state(10);
   let roundTime = $state(30);
@@ -80,6 +81,11 @@
         Esperando que el host inicie la partida...
       </div>
     {/if}
+  </div>
+
+  <div class="card">
+    <h3>💬 Chat de la sala</h3>
+    <Chat />
   </div>
 
   <div class="card">

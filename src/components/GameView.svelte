@@ -4,6 +4,7 @@
   import TopologyMap from './TopologyMap.svelte';
   import Leaderboard from './Leaderboard.svelte';
   import EventLog from './EventLog.svelte';
+  import Chat from './Chat.svelte';
 
   let remainingSeconds = $state($game.roundTime);
   let timerHandle = null;
@@ -142,6 +143,10 @@
     <div class="card">
       <h3>📡 Eventos</h3>
       <EventLog />
+    </div>
+    <div class="card">
+      <h3>💬 Chat</h3>
+      <Chat />
     </div>
   </div>
 </div>
