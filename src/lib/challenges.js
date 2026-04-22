@@ -19,7 +19,7 @@ const uniqueArr = (arr) => [...new Set(arr)];
 //   PUSH/SWAP/POP (c. 3):   OPERATION, FLOW_SEQUENCE
 //   LDP function (c. 4):    LDP_DIRECTION, LDP_FIRST, LDP_PURPOSE, LABEL_VALUE
 //   routing (bonus):        NEXT_HOP, LFIB_LOOKUP
-const CHALLENGE_TYPES = [
+export const CHALLENGE_TYPES = [
   'NEXT_HOP',
   'OPERATION',
   'ROUTER_ROLE',
@@ -32,7 +32,9 @@ const CHALLENGE_TYPES = [
   'LDP_PURPOSE',
 ];
 
-export function generateChallenge() {
+// forcedType lets the engine use a shuffled deck so no type repeats before
+// all have been seen. Falls back to pure random if omitted.
+export function generateChallenge(forcedType) {
   const topo = JSON.parse(JSON.stringify(BASE_TOPOLOGY));
 
   const takenLabels = new Set();
@@ -57,7 +59,9 @@ export function generateChallenge() {
     { node: 'PE2',   op: 'POP',  inLabel: inLabelAtPE2 },
   ];
 
-  const challengeType = pick(CHALLENGE_TYPES);
+  const challengeType = forcedType && CHALLENGE_TYPES.includes(forcedType)
+    ? forcedType
+    : pick(CHALLENGE_TYPES);
   const challenge = { type: challengeType, topo, lsp, path };
 
   // ---- Rubric 3: PUSH / SWAP / POP on a specific router ----

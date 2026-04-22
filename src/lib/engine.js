@@ -4,7 +4,7 @@
 // what they receive.
 import { get } from 'svelte/store';
 import { connectToRoom } from './transport.js';
-import { generateChallenge, buildExplanation } from './challenges.js';
+import { generateChallenge, buildExplanation, CHALLENGE_TYPES } from './challenges.js';
 import { game, me, view, log } from './stores.js';
 
 let connection = null;
@@ -17,7 +17,29 @@ const hostState = {
   currentChallenge: null,
   answersReceived: {},   // connId -> {index, time}
   roundStartTime: 0,
+  challengeDeck: [],     // shuffled queue of types; refills when empty
 };
+
+function shuffleArr(arr) {
+  const copy = arr.slice();
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function nextChallengeType() {
+  if (hostState.challengeDeck.length === 0) {
+    let deck = shuffleArr(CHALLENGE_TYPES);
+    // Avoid back-to-back repeats across deck boundaries.
+    if (hostState.currentChallenge && deck[0] === hostState.currentChallenge.type && deck.length > 1) {
+      [deck[0], deck[1]] = [deck[1], deck[0]];
+    }
+    hostState.challengeDeck = deck;
+  }
+  return hostState.challengeDeck.shift();
+}
 
 function send(envelope) {
   if (!connection) return;
@@ -82,6 +104,8 @@ export function startGame(config) {
     return;
   }
 
+  hostState.challengeDeck = [];       // fresh shuffle per game
+  hostState.currentChallenge = null;
   game.update((g) => ({ ...g, config, currentRound: 0, totalRounds: config.numRounds, roundTime: config.roundTime }));
   broadcastToAll({ type: 'game-start', config });
   view.set('game');
@@ -357,7 +381,7 @@ function nextRoundHost() {
     return;
   }
 
-  hostState.currentChallenge = generateChallenge();
+  hostState.currentChallenge = generateChallenge(nextChallengeType());
   hostState.answersReceived = {};
   hostState.roundStartTime = Date.now();
 
@@ -532,6 +556,7 @@ function teardown() {
   clientTickTimer = null;
   hostState.currentChallenge = null;
   hostState.answersReceived = {};
+  hostState.challengeDeck = [];
   chatHistory.clear();
   if (connection) {
     connection.close();
